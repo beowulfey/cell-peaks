@@ -25,6 +25,7 @@ from matplotlib import collections as mc
 from findpeaks import findpeaks
 from tqdm import tqdm
 from collections import defaultdict
+import csv
 
 class Coordinate:
     """ Class for storing coordinate data. Easy to get the distance"""
@@ -251,35 +252,45 @@ def filter_peaks(slices, data):
     edges = krus_mst(coord_list)
     
     print(f"Starting with {len(coord_list)} peaks")
-    for edge in edges:
-        mid = edge.mid()
+    with open(f"edges.csv", 'w') as csvfile:
+        writer = csv.writer(csvfile)
+        for n,edge in enumerate(edges):
+            intensities = []
+            line = edge.bline()
+            for point in line:
+                intensities.append(data[point.y][point.x])
+            writer.writerow(intensities)
+
+
+
+        #mid = edge.mid()
         #print(mid)
         #print(edge.a,edge.b,mid,mid.x,mid.y)
         #print(data[edge.a.y][edge.a.x],data[edge.b.y][edge.b.x],data[mid.y][mid.x])
-        p1 = data[edge.a.y][edge.a.x]
-        p2 = data[edge.b.y][edge.b.x]
-        p3 = data[mid.y][mid.x]
-        remove = False
-        if ((p1+p2)/2-p3)/p3 > 0.4:
-            if p1 < p3:
-                if edge.a in coord_list:
-                    coord_list.remove(edge.a)
-                    remove = True
-            if p2 < p3:
-                if edge.b in coord_list:
-                    coord_list.remove(edge.b)
-                    remove = True
-            if remove:
-                edges.remove(edge)
-        else:
-            if edge.a in coord_list:
-                    coord_list.remove(edge.a)
-                    remove = True
-            if edge.b in coord_list:
-                    coord_list.remove(edge.b)
-                    remove = True
-            if remove:
-                edges.remove(edge)
+        #p1 = data[edge.a.y][edge.a.x]
+        #p2 = data[edge.b.y][edge.b.x]
+        #p3 = data[mid.y][mid.x]
+        #remove = False
+        #if ((p1+p2)/2-p3)/p3 > 0.4:
+        #    if p1 < p3:
+        #        if edge.a in coord_list:
+        #            coord_list.remove(edge.a)
+        #            remove = True
+        #    if p2 < p3:
+        #        if edge.b in coord_list:
+        #            coord_list.remove(edge.b)
+        #            remove = True
+        #    if remove:
+        #        edges.remove(edge)
+        #else:
+        #    if edge.a in coord_list:
+        #            coord_list.remove(edge.a)
+        #            remove = True
+        #    if edge.b in coord_list:
+        #            coord_list.remove(edge.b)
+        #            remove = True
+        #    if remove:
+        #        edges.remove(edge)
             
 
     print(f"Ended with {len(coord_list)} peaks")
@@ -336,7 +347,7 @@ def krus_mst(coords):
 
 #img = Image.open('data/test_data-14bit.tif')
 img = Image.open('data/FullScale_BGsub.tif')
-nframes = range(img.n_frames)[0:1]
+nframes = range(img.n_frames)[12:13]
 cycle = 0
 for i,frame in tqdm(enumerate(nframes)):
     img.seek(frame)
@@ -352,9 +363,6 @@ for i,frame in tqdm(enumerate(nframes)):
     for peak in peaks:
         xs.append(peak.x)
         ys.append(peak.y)
-    #print(xs)
-
-
     fig, axes = plt.subplots(1, 2, sharex=True, sharey=True)
     ax = axes.ravel()
     ax[cycle].imshow(data)
@@ -363,6 +371,8 @@ for i,frame in tqdm(enumerate(nframes)):
     ax[cycle].imshow(data)
     ax[cycle].axis('off')
     ax[cycle].plot(xs,ys, 'r.')
+    
+    # Draw minimum spanning tree
     lines = []
     for edge in edges:
         #print(f"({edge.a.x}, {edge.a.y}); ({edge.b.x},{edge.b.y})")
@@ -373,6 +383,7 @@ for i,frame in tqdm(enumerate(nframes)):
     #for j in range(len(xs)):
     #    plt.annotate(j, (xs[j], ys[j]))
     cycle+=1
+
     plt.autoscale(False)
     plt.savefig(f'result-{i}.png', bbox_inches = 'tight')
     cycle=0
