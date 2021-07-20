@@ -15,8 +15,7 @@
 # 2. Calculate a mean for all points in tree, and "centerpoint mean" for each edge
 # 2. If a peak is closer to the mean than it is to the centerpoint mean, then the peak is barely a peak. 
 
-import random 
-from collections import deque
+#from . import union_find 
 
 from PIL import Image
 import numpy as np
@@ -25,13 +24,18 @@ import matplotlib.pyplot as plt
 from matplotlib import collections as mc
 from findpeaks import findpeaks
 from tqdm import tqdm
+from collections import defaultdict
 
 class Coordinate:
     """ Class for storing coordinate data. Easy to get the distance"""
-    def __init__(self, x, y, value):
-        self.x = int(x)
-        self.y = int(y)
+    def __init__(self, x, y, value=0,key=None):
+        self.x = x
+        self.y = y
         self.value = value
+        self.key = None
+    def __index__(self):
+        return self.key
+
     def __repr__(self):
         return f"({self.x},{self.y})"
 
@@ -54,27 +58,62 @@ class Coordinate:
             return True
         else:
             return False
-    
-    def min(self, other):
-        # "Minimum point" for making it easy to calculate edges
-        if self.x != other.x:
-            if self.x < other.x:
-                return self
-            else:
-                return other
-        else:
-            if self.y < other.y:
-                return self
-            elif self.y > other.y:
-                return other
-            else:
-                return None
 
 class Edge:
     def __init__(self, point_a, point_b):
         self.a = point_a
         self.b = point_b
         self.value = point_a-point_b
+    
+    def bline(self):
+    # https://stackoverflow.com/questions/50995499/generating-pixel-values-of-line-connecting-2-points
+        x0 = self.a.x
+        x1 = self.b.x
+        y0 = self.a.y
+        y1 = self.b.y
+        
+        steep = abs(y1 - y0) > abs(x1 - x0)
+        if steep:
+            x0, y0 = y0, x0  
+            x1, y1 = y1, x1
+
+        switched = False
+        if x0 > x1:
+            switched = True
+            x0, x1 = x1, x0
+            y0, y1 = y1, y0
+
+        if y0 < y1: 
+            ystep = 1
+        else:
+            ystep = -1
+
+        deltax = x1 - x0
+        deltay = abs(y1 - y0)
+        error = -deltax / 2
+        y = y0
+
+        line = []    
+        for x in range(x0, x1 + 1):
+            if steep:
+                line.append(Coordinate(y,x))
+            else:
+                line.append(Coordinate(x,y))
+
+            error = error + deltay
+            if error > 0:
+                y = y + ystep
+                error = error - deltax
+        if switched:
+            line.reverse()
+        #print(f"From ({x0},{y0}) to ({x1},{y1}) is {line}")
+        #print(f"Centerpoint is {line[round(len(line) / 2)]}")
+        return line
+    
+    def mid(self):
+        line = self.bline()
+        mid = line[round(len(line) / 2)]
+        return mid
     
     def __iter__(self):
         return iter((self.a,self.b))
@@ -98,43 +137,61 @@ class Graph:
 
 # Constructor
     def __init__(self, edges):
+        #print("Creating graph")
+        self.graph = defaultdict(list)
 
-        # A list of lists to represent an adjacency list
-        #self.adjList = [[] for _ in range(N)]
-        self.adj_list = {}
-
-        # add edges to the undirected graph
-        #print("GRAPH EDGES: ",edges)
+        i = 0
         for src, dest in edges:
-            if not list(self.adj_list.keys()).count(src):
-                self.adj_list[src] = []
-            if not list(self.adj_list.keys()).count(dest):
-                self.adj_list[dest]= []
-            self.adj_list[src].append(dest)
-            self.adj_list[dest].append(src)
+            #print("ADDING EDGE",src,dest)
+            if src.key is None:
+                src.key = i 
+                i += 1
+            if dest.key is None:
+                dest.key = i
+                i += 1
+            self.add_edge(src,dest)
+        self.verts = i
+        
+        #    if src not in temp:
+        #        temp[src] = []
+        #    if dest not in temp:
+        #        temp[dest] = []
+        #    if dest not in temp[src]:
+        #        temp[src].append(dest)
+        #    if src not in temp[dest]:
+        #        temp[dest].append(src)
+        #print(temp)
+        #self.graph = temp
+        #for src_ in temp.keys():
+        ##    for dest_ in temp[src_]:
+         #       self.graph[src_].append(dest_)
+         #       self.graph[dest_].append(src_)
+            #if not list(self.adj_list.keys()).count(src):
+            #    self.adj_list[src] = []
+            #if not list(self.adj_list.keys()).count(dest):
+            #    self.adj_list[dest]= []
+            #self.adj_list[src].append(dest)
+            #self.adj_list[dest].append(src)
+        #self.verts = len(self.graph.keys())
+        #print(f"there are {self.verts} verts and {len(edges)} edges: \n {self.graph}")
+
+    def add_edge(self,u,v):
+        self.graph[u].append(v)
 
     # https://www.geeksforgeeks.org/union-find/
     def find_parent(self, parent,i):
+        #print("FINDING PARENT", parent, i)
         if parent[i] == -1:
             return i
         if parent[i]!= -1:
              return self.find_parent(parent,parent[i])
  
-    # A utility function to do union of two subsets
     def union(self,parent,x,y):
         parent[x] = y
 
-    # The main function to check whether a given graph
-    # contains cycle or not
     def isCyclic(self):
          
-        # Allocate memory for creating V subsets and
-        # Initialize all subsets as single element sets
-        parent = [-1]*(len(self.adj_list.keys()))
- 
-        # Iterate through all edges of graph, find subset of both
-        # vertices of every edge, if both subsets are same, then
-        # there is cycle in graph.
+        parent = [-1]*(self.verts)
         for i in self.graph:
             for j in self.graph[i]:
                 x = self.find_parent(parent, i)
@@ -142,36 +199,20 @@ class Graph:
                 if x == y:
                     return True
                 self.union(parent,x,y)
+        return False
 
-def BFS(graph, src):
-    # to keep track of whether a vertex is discovered or not
-    discovered = {}
-    # mark the source vertex as discovered
-    discovered[src] = True
-    # create a queue for doing BFS
-    q = deque()
-    # enqueue source vertex and its parent info
-    q.append((src, -1))
-    # loop till queue is empty
-    while q:
-        # dequeue front node and print it
-        (v, parent) = q.popleft()
-        # do for every edge `v —> u`
-        #print(f"Checking adjacent to {v}: {graph.adj_list[v]}")
-        for u in graph.adj_list[v]:
-            if not list(discovered.keys()).count(u):
-                # mark it as discovered
-                discovered[u] = True
-                # construct the queue node containing info
-                # about vertex and enqueue it
-                q.append((u, v))
-            # `u` is discovered, and `u` is not a parent
-            elif u != parent:
-                # we found a cross-edge, i.e., the cycle is found
-                return True
-    # no cross-edges were found in the graph
-    return False
+        #for m,i in enumerate(self.graph):
+            #print("I",i)
+       #     for n,j in enumerate(self.graph[m]):
+        #        #print("J",j)
+         #       x = self.find_parent(parent, i)
+          #      y = self.find_parent(parent, j)
+           #     print("X AND Y:", x,y)
+            #    if x == y:
+             #       return True
+              #  self.union(parent,x,y)
 
+    
 def label_peaks(data):
     """ 
     This is the main peak labeling function. Uses the findpeaks library to determine significant peaks
@@ -206,58 +247,70 @@ def filter_peaks(slices, data):
         for y,x in coords:
             # Arbitrary filtration of peaks that are not above background
             if data[y][x] > 200:
-                #print("")
-                #xs.append(x)
-                #ys.append(y)
-                coord_list.append(Coordinate(x,y,data[y][x]))
-    
-    #print(coord_list)
-    ######
-    #coord_list = [Coordinate(170,84,0), Coordinate(172,85,0),Coordinate(169,81,0)]
-    ######
+                coord_list.append(Coordinate(x,y,data[y][x],i))
     edges = krus_mst(coord_list)
+    
+    print(f"Starting with {len(coord_list)} peaks")
+    for edge in edges:
+        mid = edge.mid()
+        #print(mid)
+        #print(edge.a,edge.b,mid,mid.x,mid.y)
+        #print(data[edge.a.y][edge.a.x],data[edge.b.y][edge.b.x],data[mid.y][mid.x])
+        p1 = data[edge.a.y][edge.a.x]
+        p2 = data[edge.b.y][edge.b.x]
+        p3 = data[mid.y][mid.x]
+        remove = False
+        if ((p1+p2)/2-p3)/p3 > 0.4:
+            if p1 < p3:
+                if edge.a in coord_list:
+                    coord_list.remove(edge.a)
+                    remove = True
+            if p2 < p3:
+                if edge.b in coord_list:
+                    coord_list.remove(edge.b)
+                    remove = True
+            if remove:
+                edges.remove(edge)
+        else:
+            if edge.a in coord_list:
+                    coord_list.remove(edge.a)
+                    remove = True
+            if edge.b in coord_list:
+                    coord_list.remove(edge.b)
+                    remove = True
+            if remove:
+                edges.remove(edge)
+            
+
+    print(f"Ended with {len(coord_list)} peaks")
     #subXs, subYs = bresenham_line(xs[1],ys[1],xs[2],ys[2])
     return coord_list, edges
 
-def prim_mst(coords):
-    mst_verts = []
-    edges = []
-    # put first vertex into the mst set
-    mst_verts.append(coords.pop(0))
-    # Get the nearest vertex to the first vertex
-    while coords:
-        # LOOP THROUGH ALL MST POINTS
-        curr = mst_verts[random.randint(0,len(mst_verts)-1)]
-        #print(f"MST SET: {mst_verts}")
-        next_vert = nearest(coords,curr)
-        print(curr)
-        print(next_vert)
-
-        edges.append(Edge(curr,next_vert))
-        mst_verts.append(coords.pop(coords.index(next_vert)))
-    return edges
-
 def krus_mst(coords):
     edges = {}
-    mst_verts = []
     mst_edges = []
 
+    # Start by building a dictionary of ALL possible edges (it is immense) and getting their weights, for sorting. 
     for coord in coords:
         for other_coord in coords:
             if coord != other_coord:
                 edge = Edge(coord,other_coord)
                 edges[edge]=edge.value
     edges = dict(sorted(edges.items(), key=lambda item: item[1]))
-    origin = next(iter(edges)).a
-    #print({A:N for (A,N) in [x for x in edges.items()][:4]})
-    #while edges:
+
+    # Build the graph. 
     while len(mst_edges) < (len(coords)-1):
+        print(f"HAVE {len(mst_edges)} edges out of {len(coords)-1}")
         next_edge = next(iter(edges))
-        print("NEXT EDGE:",next_edge)
         if mst_edges:
+            for edge in mst_edges:
+                edge.a.key = None
+                edge.b.key = None
+            # If the first edge has been added, try adding a new edge and seeing if it 
+            # forms a cyclic graph. If it does not, then keep it, otherwise remove it. 
             if not mst_edges.count(next_edge):    
+                # If this edge (forward or back) is not already in the graph...
                 mst_edges.append(next_edge)
-                print("Creating graph")
                 graph = Graph(mst_edges)
                 if graph.isCyclic():
                     print("Cyclic, not using edge")
@@ -270,79 +323,15 @@ def krus_mst(coords):
                 print("Duplicate detected!")
                 edges.pop(next_edge)
         else:
+            # First cycle: just add the first edge of lowest distance. 
             mst_edges.append(next_edge)
             edges.pop(next_edge)
+
     print(f"Found {len(mst_edges)} edges for {len(coords)} vertices")
-    print(mst_edges)
+    #print(mst_edges)
     return mst_edges
-        
 
 
-        # If vertices have not been added yet, add them. 
-        #if (not mst_verts.count(next_edge.a) and not mst_verts.count(next_edge.b)):
-            #mst_verts.append(next_edge.a)
-            #mst_verts.append(next_edge.b)
-            #mst_edges.append(next_edge)
-            #edges.pop(next_edge)
-            #print("Added edge", next_edge)
-        #elif (not mst_verts.append(next_edge.a) and mst_verts.count(next_edge.b)):
-            # pathfinding
-        #    print("needs pathfinding a to b")
-        #elif ( mst_verts.append(next_edge.a) and not mst_verts.count(next_edge.b)):
-        #    print("needs pathfinding b to a")
-            # pathfinding
-
-
-def nearest(coords, coord):
-    """Returns the vertex that is nearest to the starting vertex"""
-    minimum = None
-    min_dist = 1000000000
-    for vert in coords:
-        dist = coord - vert
-        if dist < min_dist:
-            min_dist = dist
-            minimum = vert
-    return minimum 
-
-def bresenham_line(x0, y0, x1, y1):
-    # https://stackoverflow.com/questions/50995499/generating-pixel-values-of-line-connecting-2-points
-    steep = abs(y1 - y0) > abs(x1 - x0)
-    if steep:
-        x0, y0 = y0, x0  
-        x1, y1 = y1, x1
-
-    switched = False
-    if x0 > x1:
-        switched = True
-        x0, x1 = x1, x0
-        y0, y1 = y1, y0
-
-    if y0 < y1: 
-        ystep = 1
-    else:
-        ystep = -1
-
-    deltax = x1 - x0
-    deltay = abs(y1 - y0)
-    error = -deltax / 2
-    y = y0
-
-    line = []    
-    for x in range(x0, x1 + 1):
-        if steep:
-            line.append((y,x))
-        else:
-            line.append((x,y))
-
-        error = error + deltay
-        if error > 0:
-            y = y + ystep
-            error = error - deltax
-    if switched:
-        line.reverse()
-    print(f"From ({x0},{y0}) to ({x1},{y1}) is {line}")
-    print(f"Centerpoint is {line[int(len(line) / 2)]}")
-    return line
 
 
 #img = Image.open('data/test_data-14bit.tif')
@@ -356,7 +345,7 @@ for i,frame in tqdm(enumerate(nframes)):
     gauss = ndimage.filters.gaussian_filter(data,sigma=1)
     slices = label_peaks(gauss)
     peaks, edges = filter_peaks(slices,gauss)
-    #print("PEAKS!",peaks)
+    print("PEAKS!",peaks)
     xs = []
     ys = []
 
