@@ -19,13 +19,13 @@
 
 from PIL import Image
 import numpy as np
-from scipy import ndimage
+from scipy import ndimage, stats
 import matplotlib.pyplot as plt
 from matplotlib import collections as mc
 from findpeaks import findpeaks
 from tqdm import tqdm
 from collections import defaultdict
-import csv
+from statistics import NormalDist
 
 class Coordinate:
     """ Class for storing coordinate data. Easy to get the distance"""
@@ -191,6 +191,12 @@ class Graph:
         return False
 
     
+def confidence(data,confidence=0.95):
+    dist = NormalDist.from_samples(data)
+    z = NormalDist().inv_cdf((1+confidence)/ 2.)
+    h = dist.stdev * z/ ((len(data)-1) ** 0.5)
+    return h
+
 def label_peaks(data):
     """ 
     This is the main peak labeling function. Uses the findpeaks library to determine significant peaks
@@ -202,7 +208,7 @@ def label_peaks(data):
     """
 
     # Use findpeaks to label the peaks via topological prominence
-    fp = findpeaks(method='topology', window=3)
+    fp = findpeaks(method='topology', cu='0.6', window=5)
     results = fp.fit(data)
 
     # Create an array of the peaks labeled for numpy interaction
@@ -227,27 +233,51 @@ def filter_peaks(slices, data):
     # Start by converting the slices into a usable format.  
         for y,x in coords:
             # Arbitrary filtration of peaks that are not above background
-            if data[y][x] > 200:
+            if data[y][x] > 500:
                 coord_list.append(Coordinate(x,y,data[y][x],i))
     
     # Build the Minimum Spanning Tree with Kruskal's algorithm 
     edges = krus_mst(coord_list)
 
+    p1s = []
+    p2s = []
+    p3s = []
+    mids = []
 
-    # Filter out peaks that don't fit. 
-    print(f"Starting with {len(coord_list)} peaks")
-    with open(f"edges.csv", 'w') as csvfile:
-        writer = csv.writer(csvfile)
-        for n,edge in enumerate(edges):
-            intensities = []
-            line = edge.bline()
-            for point in line:
-                intensities.append(data[point.y][point.x])
-            writer.writerow(intensities)
+    for edge in edges:
+        mid = edge.mid()
+        mids.append(mid)
+        p1s.append(data[edge.a.y][edge.a.x])
+        p2s.append(data[edge.b.y][edge.b.x])
+        p3s.append(data[mid.y][mid.x])
+
+    #stdev = int(np.std([i for n, i in enumerate(p1s) if i not in p1s[:n]] + [j for m, j in enumerate(p2s) if j not in p2s[:m]]))
+    stdev = int(np.std(p3s))
+    cf = confidence(p3s, confidence = 0.95)
+    meanmid = int(np.mean(p3s))
+    #print(f"Mean of midpoints is {meanmid} and upper of peaks is {meanmid+cf}")
+    removed = []
+    for n,edge in enumerate(edges):
+        midv = p3s[n]
+        #print(f"EDGE: {edge} -> {edge.a.value}, {edge.b.value}, {midv} vs {meanmid} +/- {cf}")
+        remove = False
+        if cf + midv > p1s[n]-cf:
+            if edge.a in coord_list:
+                    coord_list.remove(edge.a)
+                    remove = True
+        if cf + midv > p2s[n]-cf:
+            if edge.b in coord_list:
+                    coord_list.remove(edge.b)
+                    remove = True
+        if remove:
+            removed.append(edge)
+
+    if removed:
+        [edges.remove(edge) for edge in removed]
 
 
     print(f"Ended with {len(coord_list)} peaks")
-    return coord_list, edges
+    return coord_list, edges, mids
 
 def krus_mst(coords):
     """
@@ -306,58 +336,79 @@ def krus_mst(coords):
             mst_edges.append(next_edge)
             edges.pop(next_edge)
 
-    print(f"Found {len(mst_edges)} edges for {len(coords)} vertices")
+    #print(f"Found {len(mst_edges)} edges for {len(coords)} vertices")
     return mst_edges
 
 
 # Main Sequence (should extract into MAIN)
 
 #img = Image.open('data/test_data-14bit.tif')
-#img = Image.open('data/FullScale_BGsub.tif')
-img = Image.open('data/AVG_TC-olaIs39.tif')
+img = Image.open('data/FullScale_BGsub.tif')
+#img = Image.open('data/AVG_TC-olaIs39.tif')
 
-nframes = range(img.n_frames)[12:13]
-cycle = 0
+x2s = []
+y2s = []
+nframes = range(img.n_frames)
+#cycle = 0
 for i,frame in tqdm(enumerate(nframes)):
+    print(f"FRAME {i}")
     img.seek(frame)
     data = np.array(img)
 
     # Gauss filter to smooth out the clipped peaks
-    #gauss = ndimage.filters.gaussian_filter(data,sigma=1)
-    gauss = data
+    gauss = ndimage.filters.gaussian_filter(data,sigma=1)
+    #gauss = data
     slices = label_peaks(gauss)
-    peaks, edges = filter_peaks(slices,gauss)
-    print("PEAKS!",peaks)
+    peaks, edges, mids = filter_peaks(slices,gauss)
+    
     xs = []
     ys = []
-
+    x2s.append(i/4)
+    y2s.append(len(peaks))
+    
+    
+    #print("=====================")
+    #print("PEAK\tVALUE")
+    #print("=====================")
     for peak in peaks:
+    #    print(f"{peak}      {peak.value}")
         xs.append(peak.x)
         ys.append(peak.y)
-    fig, axes = plt.subplots(1, 2, sharex=True, sharey=True)
-    ax = axes.ravel()
-    ax[cycle].imshow(data)
-    ax[cycle].axis('off')
-    cycle+=1
-    ax[cycle].imshow(data)
-    ax[cycle].axis('off')
-    ax[cycle].plot(xs,ys, 'r.')
+    #fig, axes = plt.subplots(1, 2, sharex=True, sharey=True)
+    fig = plt.figure()
+    ax1 = plt.subplot2grid((2,2),(0,0))
+    plt.imshow(data)
+    ax2 = plt.subplot2grid((2,2),(0,1))
+    plt.imshow(gauss)
+    plt.plot(xs,ys, 'r.',markersize='2')
+    ax3 = plt.subplot2grid((2,2),(1,0), colspan=2)
+    axes = plt.gca()
+    axes.set_xlim([0,9])
+    axes.set_ylim([0,70])
+    axes.set_xlabel("Time (min)")
+    axes.set_ylabel("Number of condensates")
+    plt.plot(x2s,y2s, color='red')
+    if i>=8:
+        plt.vlines(8/4,0,50,colors='gray',linestyles='dashed')
+        plt.text(x=8/4-0.5,y=55, s="KCl added")
+
+    #ax[cycle].plot(x2s,y2s, 'g.')
     
     # Draw minimum spanning tree
-    lines = []
-    for edge in edges:
+    #lines = []
+    #for edge in edges:
         #print(f"({edge.a.x}, {edge.a.y}); ({edge.b.x},{edge.b.y})")
-        lines.append([(edge.a.x,edge.a.y),(edge.b.x,edge.b.y)])
-    lc = mc.LineCollection(lines, colors="orange", linewidths=0.5)
-    ax[cycle].add_collection(lc)
+    #    lines.append([(edge.a.x,edge.a.y),(edge.b.x,edge.b.y)])
+    #lc = mc.LineCollection(lines, colors="blue", linewidths=0.5)
+    #ax[cycle].add_collection(lc)
         #ax[cycle].axline((edge.a.x,edge.a.y),(edge.b.x,edge.b.y))
     #for j in range(len(xs)):
     #    plt.annotate(j, (xs[j], ys[j]))
-    cycle+=1
+    #cycle+=1
 
-    plt.autoscale(False)
-    plt.savefig(f'result-{i}.png', bbox_inches = 'tight')
-    cycle=0
-    plt.show()
+    #plt.autoscale(False)
+    plt.savefig(f'result-{i}.png', bbox_inches = 'tight',dpi=300)
+    #cycle=0
+    #plt.show()
     plt.close(fig)
 
