@@ -225,6 +225,8 @@ def filter_peaks(slices, data):
     """ 
     Reads in the peaks, and determines whether a peak is significant enough 
     (non-phase separated maxima still register as peaks)
+
+
     """
     
     coord_list = []
@@ -237,47 +239,50 @@ def filter_peaks(slices, data):
                 coord_list.append(Coordinate(x,y,data[y][x],i))
     
     # Build the Minimum Spanning Tree with Kruskal's algorithm 
-    edges = krus_mst(coord_list)
+    if len(coord_list) > 1:
+        edges = krus_mst(coord_list)
 
-    p1s = []
-    p2s = []
-    p3s = []
-    mids = []
+        p1s = []
+        p2s = []
+        p3s = []
+        mids = []
 
-    for edge in edges:
-        mid = edge.mid()
-        mids.append(mid)
-        p1s.append(data[edge.a.y][edge.a.x])
-        p2s.append(data[edge.b.y][edge.b.x])
-        p3s.append(data[mid.y][mid.x])
+        for edge in edges:
+            mid = edge.mid()
+            mids.append(mid)
+            p1s.append(data[edge.a.y][edge.a.x])
+            p2s.append(data[edge.b.y][edge.b.x])
+            p3s.append(data[mid.y][mid.x])
 
-    #stdev = int(np.std([i for n, i in enumerate(p1s) if i not in p1s[:n]] + [j for m, j in enumerate(p2s) if j not in p2s[:m]]))
-    stdev = int(np.std(p3s))
-    cf = confidence(p3s, confidence = 0.95)
-    meanmid = int(np.mean(p3s))
-    #print(f"Mean of midpoints is {meanmid} and upper of peaks is {meanmid+cf}")
-    removed = []
-    for n,edge in enumerate(edges):
-        midv = p3s[n]
-        #print(f"EDGE: {edge} -> {edge.a.value}, {edge.b.value}, {midv} vs {meanmid} +/- {cf}")
-        remove = False
-        if cf + midv > p1s[n]-cf:
-            if edge.a in coord_list:
-                    coord_list.remove(edge.a)
-                    remove = True
-        if cf + midv > p2s[n]-cf:
-            if edge.b in coord_list:
-                    coord_list.remove(edge.b)
-                    remove = True
-        if remove:
-            removed.append(edge)
+        #stdev = int(np.std([i for n, i in enumerate(p1s) if i not in p1s[:n]] + [j for m, j in enumerate(p2s) if j not in p2s[:m]]))
+        #stdev = int(np.std(p3s))
+        cf = confidence(p3s, confidence = 0.95)
+        #meanmid = int(np.mean(p3s))
+        #print(f"Mean of midpoints is {meanmid} and upper of peaks is {meanmid+cf}")
+        removed = []
+        for n,edge in enumerate(edges):
+            midv = p3s[n]
+            #print(f"EDGE: {edge} -> {edge.a.value}, {edge.b.value}, {midv} vs {meanmid} +/- {cf}")
+            remove = False
+            if cf + midv > p1s[n]-cf:
+                if edge.a in coord_list:
+                        coord_list.remove(edge.a)
+                        remove = True
+            if cf + midv > p2s[n]-cf:
+                if edge.b in coord_list:
+                        coord_list.remove(edge.b)
+                        remove = True
+            if remove:
+                removed.append(edge)
 
-    if removed:
-        [edges.remove(edge) for edge in removed]
+        if removed:
+            [edges.remove(edge) for edge in removed]
 
 
-    print(f"Ended with {len(coord_list)} peaks")
-    return coord_list, edges, mids
+        print(f"Ended with {len(coord_list)} peaks")
+        return coord_list, edges, mids
+    else:
+        return coord_list, None, None
 
 def krus_mst(coords):
     """
@@ -343,7 +348,7 @@ def krus_mst(coords):
 # Main Sequence (should extract into MAIN)
 
 #img = Image.open('data/test_data-14bit.tif')
-img = Image.open('data/FullScale_BGsub.tif')
+img = Image.open('data/test2.tif')
 #img = Image.open('data/AVG_TC-olaIs39.tif')
 
 x2s = []
@@ -356,8 +361,8 @@ for i,frame in tqdm(enumerate(nframes)):
     data = np.array(img)
 
     # Gauss filter to smooth out the clipped peaks
-    gauss = ndimage.filters.gaussian_filter(data,sigma=1)
-    #gauss = data
+    #gauss = ndimage.filters.gaussian_filter(data,sigma=1)
+    gauss = data
     slices = label_peaks(gauss)
     peaks, edges, mids = filter_peaks(slices,gauss)
     
